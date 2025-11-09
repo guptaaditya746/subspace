@@ -1,13 +1,18 @@
 import os
-import copy
 import pickle
 import time
 import sys
-from multiprocessing import Pool
-import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from tensorflow import keras
+import mlflow
+from loguru import logger
+
+# Add project root to path to allow importing logging_config
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from logging_config import configure_logger
 
 from experiments.experiment_utils import local_data_loader, label_encoder
 from methods.ABCF.utils import sliding_window_3d, entropy, target_adapted, native_guide_retrieval
@@ -24,12 +29,15 @@ experiments = {
 
 
 def experiment_dataset(dataset, exp_name, params):
+    logger.info(f"Processing dataset: {dataset}")
     # Load dataset data
     # X_train, y_train, X_test, y_test = ucr_data_loader(DATASET, store=True)
     X_train, y_train, X_test, y_test = local_data_loader(str(dataset), data_path="./data")
     y_train, y_test = label_encoder(y_train, y_test)
+    logger.info("Data loaded and preprocessed.")
 
     # Load model
+    logger.info("Loading model...")
     model = keras.models.load_model(f'models/{dataset}/{dataset}_best_model.hdf5')
 
     # Predict on x test
@@ -48,6 +56,7 @@ def experiment_dataset(dataset, exp_name, params):
     cfs = []
     target_probas = []
     times = []
+    logger.info("Generating counterfactuals for test set...")
     for i in tqdm(range(len(X_test))):  # len(X_test)
         start_time = time.time()
         subsequences = sliding_window_3d(X_test[i], window_size, stride)
@@ -104,18 +113,42 @@ def experiment_dataset(dataset, exp_name, params):
 
     # Adapt counterfactual result to our format
     results = [{'cf': np.swapaxes(cf, 1, 2), 'time': -1} for cf in cfs]
+
+    # Log metrics to mlflow
+    avg_time = np.mean(times) if times else -1
+    avg_target_proba = np.mean(target_probas) if target_probas else -1
+    success_rate = len(times) / len(X_test)
+    logger.info(f"Average generation time: {avg_time:.4f}s")
+    logger.info(f"Success rate: {success_rate:.2%}")
+    mlflow.log_metrics({
+        "avg_generation_time": avg_time,
+        "avg_target_probability": avg_target_proba,
+        "success_rate": success_rate
+    })
+
     # Store concatenated file
-    with open(f'./results/{dataset}/{exp_name}.pickle', 'wb') as f:
+    result_path = f'./results/{dataset}/{exp_name}.pickle'
+    os.makedirs(os.path.dirname(result_path), exist_ok=True)
+    with open(result_path, 'wb') as f:
         pickle.dump(results, f, pickle.HIGHEST_PROTOCOL)
+    logger.info(f"Results saved to {result_path}")
+    mlflow.log_artifact(result_path, artifact_path="results")
 
 
 if __name__ == "__main__":
+    configure_logger()
+    mlflow.set_experiment("ab_cf_experiments")
+
     for experiment_name, experiment_params in experiments.items():
         for dataset in DATASETS:
-            print(f'Starting experiment {experiment_name} for dataset {dataset}...')
-            experiment_dataset(
-                dataset,
-                experiment_name,
-                experiment_params["params"]
-            )
-    print('Finished')
+            with mlflow.start_run(run_name=f"{experiment_name}_{dataset}"):
+                logger.info(f"Starting experiment '{experiment_name}' for dataset '{dataset}'...")
+                mlflow.log_param("dataset", dataset)
+                mlflow.log_param("experiment_name", experiment_name)
+                mlflow.log_params(experiment_params["params"])
+                experiment_dataset(
+                    dataset,
+                    experiment_name,
+                    experiment_params["params"]
+                )
+    logger.info('Finished all experiments.')

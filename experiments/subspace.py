@@ -1,12 +1,18 @@
 import os
-import copy
 import pickle
-import sys
 from multiprocessing import Pool
-import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from tensorflow import keras
+import mlflow
+from loguru import logger
+import sys
+
+# Add project root to path to allow importing logging_config
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from logging_config import configure_logger
 
 from experiments.experiment_utils import local_data_loader, label_encoder, nun_retrieval, store_partial_cfs
 from experiments.results.results_concatenator import concatenate_result_files
@@ -72,12 +78,15 @@ def get_counterfactual_worker(sample_dict):
     # Store results of cf in list
     store_partial_cfs(results, first_sample_i, first_sample_i+THREAD_SAMPLES-1,
                       dataset, file_suffix_name=exp_name)
+    
+    # Log partial result as artifact
+    partial_result_path = f'./results/{dataset}/{exp_name}_{first_sample_i:04d}-{first_sample_i+THREAD_SAMPLES-1:04d}.pickle'
+    mlflow.log_artifact(partial_result_path, artifact_path="partial_results")
     return 1
 
 
 def experiment_dataset(dataset, exp_name, params):
-    # Load dataset data
-    # X_train, y_train, X_test, y_test = ucr_data_loader(DATASET, store=True)
+    logger.info(f"Processing dataset: {dataset}")
     X_train, y_train, X_test, y_test = local_data_loader(str(dataset), data_path="./data")
     y_train, y_test = label_encoder(y_train, y_test)
 
@@ -88,6 +97,7 @@ def experiment_dataset(dataset, exp_name, params):
     y_pred_logits = model.predict(X_test, verbose=0)
     y_pred = np.argmax(y_pred_logits, axis=1)
 
+    logger.info("Retrieving NUNs for test set...")
     # Get the NUNs
     nuns_idx = []
     desired_classes = []
@@ -121,21 +131,35 @@ def experiment_dataset(dataset, exp_name, params):
             samples.append(sample_dict)
 
         # Execute counterfactual generation
-        print('Starting counterfactual generation using multiprocessing...')
+        logger.info('Starting counterfactual generation using multiprocessing...')
         with Pool(POOL_SIZE) as p:
             _ = list(tqdm(p.imap(get_counterfactual_worker, samples), total=len(samples)))
 
     # Concatenate the results
+    logger.info("Concatenating partial results...")
     concatenate_result_files(dataset, exp_name)
+
+    # Log final result as artifact
+    final_result_path = f'./results/{dataset}/{exp_name}.pickle'
+    if os.path.exists(final_result_path):
+        mlflow.log_artifact(final_result_path, artifact_path="final_results")
+        logger.info(f"Logged final result artifact: {final_result_path}")
 
 
 if __name__ == "__main__":
+    configure_logger()
+    mlflow.set_experiment("subspace_experiments")
+
     for experiment_name, experiment_params in experiments.items():
         for dataset in DATASETS:
-            print(f'Starting experiment {experiment_name} for dataset {dataset}...')
-            experiment_dataset(
-                dataset,
-                experiment_name,
-                experiment_params["params"]
-            )
-    print('Finished')
+            with mlflow.start_run(run_name=f"{experiment_name}_{dataset}"):
+                logger.info(f"Starting experiment '{experiment_name}' for dataset '{dataset}'...")
+                mlflow.log_param("dataset", dataset)
+                mlflow.log_param("experiment_name", experiment_name)
+                mlflow.log_params(experiment_params["params"])
+                experiment_dataset(
+                    dataset,
+                    experiment_name,
+                    experiment_params["params"]
+                )
+    logger.info('Finished all experiments.')
