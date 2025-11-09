@@ -14,10 +14,20 @@ def store_partial_cfs(results, s_start, s_end, dataset, file_suffix_name):
 
 
 def local_data_loader(dataset, data_path="../../data"):
-    X_train = np.load(f'{data_path}/UCR/{dataset}/X_train.npy', allow_pickle=True)
-    X_test = np.load(f'{data_path}/UCR/{dataset}/X_test.npy', allow_pickle=True)
-    y_train = np.load(f'{data_path}/UCR/{dataset}/y_train.npy', allow_pickle=True)
-    y_test = np.load(f'{data_path}/UCR/{dataset}/y_test.npy', allow_pickle=True)
+    base_path = os.path.join(data_path, 'UCR', dataset)
+    X_train_path = os.path.join(base_path, 'X_train.npy')
+
+    if not os.path.exists(X_train_path):
+        raise FileNotFoundError(
+            f"Dataset file not found: {X_train_path}\n"
+            f"Please make sure the dataset '{dataset}' has been downloaded and "
+            f"is located in the '{base_path}' directory."
+        )
+
+    X_train = np.load(X_train_path, allow_pickle=True)
+    X_test = np.load(os.path.join(base_path, 'X_test.npy'), allow_pickle=True)
+    y_train = np.load(os.path.join(base_path, 'y_train.npy'), allow_pickle=True)
+    y_test = np.load(os.path.join(base_path, 'y_test.npy'), allow_pickle=True)
     return X_train, y_train, X_test, y_test
 
 

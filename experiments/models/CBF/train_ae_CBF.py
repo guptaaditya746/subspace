@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 from tensorflow import keras
 from matplotlib import pyplot as plt
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+
 
 from methods.outlier_calculators import AEOutlierCalculator
 from experiments.experiment_utils import local_data_loader
@@ -12,28 +14,32 @@ from experiments.experiment_utils import local_data_loader
 if __name__ == "__main__":
     # Load data
     dataset = 'CBF'
-    X_train, y_train, X_test, y_test = local_data_loader(str(dataset), data_path="../../data")
+    data_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data'))
+    X_train, y_train, X_test, y_test = local_data_loader(str(dataset), data_path=data_path)
 
     if not os.path.isfile(f'./{dataset}_ae.hdf5'):
-        # Define AE model
-        encoder = keras.Sequential([
-                keras.layers.Input(shape=(X_train.shape[1], X_train.shape[2])),
-                keras.layers.Conv1D(filters=16, kernel_size=3, strides=2, padding="same", activation="relu"),
-                keras.layers.Dropout(rate=0.2),
-                keras.layers.Conv1D(filters=8, kernel_size=3, strides=2, padding="same", activation="relu"),
-                keras.layers.Flatten(),
-                keras.layers.Dense(30)
-            ])
-        decoder = keras.Sequential([
-            keras.layers.Dense(encoder.layers[-2].output_shape[1]),
-            keras.layers.Reshape(encoder.layers[-3].output_shape[1:]),
-            keras.layers.Conv1DTranspose(filters=8, kernel_size=3, strides=2, padding="same", activation="relu"),
-            keras.layers.Dropout(rate=0.2),
-            keras.layers.Conv1DTranspose(filters=16, kernel_size=3, strides=2, padding="same", activation="relu"),
-            keras.layers.Conv1DTranspose(filters=1, kernel_size=3, padding="same"),
-        ])
+        # Define AE model using the Functional API
+        input_layer = keras.layers.Input(shape=(X_train.shape[1], X_train.shape[2]))
+        
+        # Encoder
+        x = keras.layers.Conv1D(filters=16, kernel_size=3, strides=2, padding="same", activation="relu")(input_layer)
+        x = keras.layers.Dropout(rate=0.2)(x)
+        conv_shape = x.shape
+        x = keras.layers.Conv1D(filters=8, kernel_size=3, strides=2, padding="same", activation="relu")(x)
+        flatten_shape = x.shape
+        x = keras.layers.Flatten()(x)
+        encoded = keras.layers.Dense(30)(x)
+        encoder = keras.Model(input_layer, encoded)
 
-        ae = keras.Sequential([encoder, decoder])
+        # Decoder
+        x = keras.layers.Dense(np.prod(flatten_shape[1:]))(encoded)
+        x = keras.layers.Reshape(flatten_shape[1:])(x)
+        x = keras.layers.Conv1DTranspose(filters=8, kernel_size=3, strides=2, padding="same", activation="relu")(x)
+        x = keras.layers.Dropout(rate=0.2)(x)
+        x = keras.layers.Conv1DTranspose(filters=16, kernel_size=3, strides=2, padding="same", activation="relu")(x)
+        decoded = keras.layers.Conv1DTranspose(filters=1, kernel_size=3, padding="same")(x)
+        ae = keras.Model(input_layer, decoded)
+        
         ae.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001), loss="mse")
         ae.build(input_shape=(None, X_train.shape[1], X_train.shape[2]))
         print(ae.summary())
@@ -66,7 +72,7 @@ if __name__ == "__main__":
                 axs[j].plot(list(range(X_test.shape[1])), X_test[i, :, j].flatten())
                 axs[j].plot(list(range(X_test.shape[1])), X_test_reconst[i, :, j].flatten())
             plt.title(f"Label: {y_test[i]}")
-            plt.show()
+            # plt.show()
 
         # Store keras model
         ae.save(f'./{dataset}_ae.hdf5')
@@ -78,4 +84,3 @@ if __name__ == "__main__":
     outlier_calculator = AEOutlierCalculator(ae, X_train)
     with open(f'./{dataset}_outlier_calculator.pickle', 'wb') as f:
         pickle.dump(outlier_calculator, f, pickle.HIGHEST_PROTOCOL)
-
