@@ -7,7 +7,9 @@ from tensorflow import keras
 import mlflow
 from loguru import logger
 import sys
-
+import warnings
+warnings.filterwarnings('ignore')
+# python3 -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
 # Add project root to path to allow importing logging_config
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
@@ -20,7 +22,7 @@ from experiments.results.results_concatenator import concatenate_result_files
 from methods.SubSpaCECF import SubSpaCECF
 
 # DATASETS = ['CBF', 'chinatown', 'coffee', 'gunpoint', 'ECG200']
-DATASETS = ['ECG200']
+DATASETS = ['CBF']
 MULTIPROCESSING = True
 I_START = 0
 THREAD_SAMPLES = 5

@@ -17,6 +17,8 @@ from logging_config import configure_logger
 from experiments.experiment_utils import local_data_loader, label_encoder
 from methods.ABCF.utils import sliding_window_3d, entropy, target_adapted, native_guide_retrieval
 
+import os
+os.chdir("/home/gupt_ad/conclusion_work/experiments/subspace")
 
 DATASETS = ['CBF', 'chinatown', 'coffee', 'gunpoint', 'ECG200']
 
@@ -32,12 +34,15 @@ def experiment_dataset(dataset, exp_name, params):
     logger.info(f"Processing dataset: {dataset}")
     # Load dataset data
     # X_train, y_train, X_test, y_test = ucr_data_loader(DATASET, store=True)
-    X_train, y_train, X_test, y_test = local_data_loader(str(dataset), data_path="./data")
+    X_train, y_train, X_test, y_test = local_data_loader(str(dataset), data_path = "./experiments/data")
     y_train, y_test = label_encoder(y_train, y_test)
     logger.info("Data loaded and preprocessed.")
 
     # Load model
     logger.info("Loading model...")
+    import os
+    os.chdir("/home/gupt_ad/conclusion_work/experiments/subspace/experiments")
+
     model = keras.models.load_model(f'models/{dataset}/{dataset}_best_model.hdf5')
 
     # Predict on x test
@@ -137,18 +142,18 @@ def experiment_dataset(dataset, exp_name, params):
 
 if __name__ == "__main__":
     configure_logger()
-    mlflow.set_experiment("ab_cf_experiments")
+    # mlflow.set_experiment("ab_cf_experiments")
 
-    for experiment_name, experiment_params in experiments.items():
-        for dataset in DATASETS:
-            with mlflow.start_run(run_name=f"{experiment_name}_{dataset}"):
-                logger.info(f"Starting experiment '{experiment_name}' for dataset '{dataset}'...")
-                mlflow.log_param("dataset", dataset)
-                mlflow.log_param("experiment_name", experiment_name)
-                mlflow.log_params(experiment_params["params"])
-                experiment_dataset(
-                    dataset,
-                    experiment_name,
-                    experiment_params["params"]
-                )
+    # for experiment_name, experiment_params in experiments.items():
+    #     for dataset in DATASETS:
+    #         with mlflow.start_run(run_name=f"{experiment_name}_{dataset}"):
+    #             logger.info(f"Starting experiment '{experiment_name}' for dataset '{dataset}'...")
+    #             mlflow.log_param("dataset", dataset)
+    #             mlflow.log_param("experiment_name", experiment_name)
+    #             mlflow.log_params(experiment_params["params"])
+    #             experiment_dataset(
+    #                 dataset,
+    #                 experiment_name,
+    #                 experiment_params["params"]
+    #             )
     logger.info('Finished all experiments.')

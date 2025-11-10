@@ -13,7 +13,7 @@ def store_partial_cfs(results, s_start, s_end, dataset, file_suffix_name):
         pickle.dump(results, f, pickle.HIGHEST_PROTOCOL)
 
 
-def local_data_loader(dataset, data_path="../../data"):
+def local_data_loader(dataset, data_path = "./experiments/data"):
     base_path = os.path.join(data_path, 'UCR', dataset)
     X_train_path = os.path.join(base_path, 'X_train.npy')
 
